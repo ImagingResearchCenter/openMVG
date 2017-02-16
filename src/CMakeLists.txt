@@ -8,6 +8,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 
 project(openMVG C CXX)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 
 # guard against in-source builds
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
@@ -443,6 +444,21 @@ endif (OpenMVG_BUILD_SOFTWARES)
 # Included for research purpose only
 add_subdirectory(nonFree)
 
+include_directories(
+    "../pybind11/include"
+    "/opt/rh/python33/root/usr/include/python3.3m")
+add_subdirectory(pybind11)
+pybind11_add_module(openmvg python/openmvg.cpp)
+target_link_libraries(openmvg
+  openMVG_system
+  openMVG_image
+  openMVG_features
+  openMVG_multiview
+  openMVG_sfm
+  stlplus
+  vlsift
+  )
+
 # ==============================================================================
 # Documentation
 # --------------------------
@@ -635,3 +651,5 @@ configure_file(
 
 add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
+
