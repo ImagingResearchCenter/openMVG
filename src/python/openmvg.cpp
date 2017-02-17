@@ -127,11 +127,51 @@ bool run(std::string filename, std::string outdir) {
   return EXIT_SUCCESS;
 }
 
+bool process_image(View view, std::string image_path, std::string mask_path, std::string infofile, std::string descfile, std::string featfile)
+{
+  Image<unsigned char> image;
+
+  if (!ReadImage(image_path.c_str(), &image))
+    return false;
+
+  std::unique_ptr<Image_describer> image_describer;
+
+  image_describer.reset(new SIFT_Image_describer
+    (SIFT_Image_describer::Params(), true));
+  if (!image_describer->Set_configuration_preset(features::ULTRA_PRESET))
+  {
+    std::cerr << "Preset configuration failed." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  std::ofstream stream(infofile.c_str());
+  if (!stream.is_open())
+    return false;
+
+  cereal::JSONOutputArchive archive(stream);
+  archive(cereal::make_nvp("image_describer", image_describer));
+  std::unique_ptr<Regions> regionsType;
+  image_describer->Allocate(regionsType);
+  archive(cereal::make_nvp("regions_type", regionsType));
+
+  Image<unsigned char> * mask = nullptr;
+  if (stlplus::file_exists(mask_path))
+    ReadImage(mask_path.c_str(), mask);
+
+  // Compute features and descriptors and export them to files
+  std::unique_ptr<Regions> regions;
+  image_describer->Describe(image, regions, mask);
+  image_describer->Save(regions.get(), featfile, descfile);
+}
 
 PYBIND11_PLUGIN(openmvg) {
     py::module m("openmvg", "openMVG Bindings");
 
     m.def("run", &run, "Compute image features");
+    m.def("process_image", &process_image, "Generate features and sift descriptors for a single image");
+
+    py::class_<View>(m, "View")
+        .def(py::init<const std::string &, IndexT, IndexT, IndexT, IndexT, IndexT>());
 
     return m.ptr();
 }
