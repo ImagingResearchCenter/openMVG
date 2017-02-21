@@ -94,6 +94,7 @@ bool run(std::string filename, std::string outdir) {
     Views::const_iterator iterViews = sfm_data.views.begin();
     std::advance(iterViews, i);
     const View * view = iterViews->second.get();
+    std::cout << "View Info:" << view->id_view << ", " << view->id_intrinsic << ", " << view->s_Img_path;
     const std::string
       sView_filename = stlplus::create_filespec(sfm_data.s_root_path, view->s_Img_path),
       sFeat = stlplus::create_filespec(outdir, stlplus::basename_part(sView_filename), "feat"),
