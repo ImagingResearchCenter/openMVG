@@ -165,11 +165,95 @@ bool process_image(View view, std::string image_path, std::string mask_path, std
   image_describer->Save(regions.get(), featfile, descfile);
 }
 
+int generate_keypoints(std::string image_file, std::string keypoint_file) {
+  using namespace openMVG::features;
+  std::unique_ptr<Image_describer> image_describer;
+
+  const std::string sImage_describer = stlplus::create_filespec(keypoint_file);
+  image_describer.reset(new SIFT_Image_describer
+    (SIFT_Image_describer::Params(), true));
+  if (!image_describer->Set_configuration_preset(features::ULTRA_PRESET))
+  {
+    std::cerr << "Preset configuration failed." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  std::ofstream stream(sImage_describer.c_str());
+  if (!stream.is_open())
+    return false;
+
+  cereal::JSONOutputArchive archive(stream);
+  archive(cereal::make_nvp("image_describer", image_describer));
+  std::unique_ptr<Regions> regionsType;
+  image_describer->Allocate(regionsType);
+  archive(cereal::make_nvp("regions_type", regionsType));
+
+  // Feature extraction routines
+  // For each View of the SfM_Data container:
+  // - if regions file exists continue,
+  // - if no file, compute features
+  Image<unsigned char> imageGray, globalMask;
+
+  const std::string sGlobalMask_filename = stlplus::create_filespec(outdir, "mask.png");
+  if (stlplus::file_exists(sGlobalMask_filename))
+  {
+    if (ReadImage(sGlobalMask_filename.c_str(), &globalMask))
+    {
+      std::cout
+        << "Feature extraction will use a GLOBAL MASK:\n"
+        << sGlobalMask_filename << std::endl;
+    }
+  }
+
+  const unsigned int nb_max_thread = omp_get_max_threads();
+
+  omp_set_num_threads(nb_max_thread);
+
+  for(int i = 0; i < static_cast<int>(sfm_data.views.size()); ++i)
+  {
+    Views::const_iterator iterViews = sfm_data.views.begin();
+    std::advance(iterViews, i);
+    const View * view = iterViews->second.get();
+    std::cout << "View Info:" << view->id_view << ", " << view->id_intrinsic << ", " << view->s_Img_path;
+    const std::string
+      sView_filename = stlplus::create_filespec(sfm_data.s_root_path, view->s_Img_path),
+      sFeat = stlplus::create_filespec(outdir, stlplus::basename_part(sView_filename), "feat"),
+      sDesc = stlplus::create_filespec(outdir, stlplus::basename_part(sView_filename), "desc");
+
+    if (!ReadImage(sView_filename.c_str(), &imageGray))
+      continue;
+
+    Image<unsigned char> * mask = nullptr; // The mask is null by default
+
+    const std::string sImageMask_filename =
+      stlplus::create_filespec(sfm_data.s_root_path,
+        stlplus::basename_part(sView_filename) + "_mask", "png");
+
+    Image<unsigned char> imageMask;
+    if (stlplus::file_exists(sImageMask_filename))
+      ReadImage(sImageMask_filename.c_str(), &imageMask);
+
+    // The mask point to the globalMask, if a valid one exists for the current image
+    if (globalMask.Width() == imageGray.Width() && globalMask.Height() == imageGray.Height())
+      mask = &globalMask;
+    // The mask point to the imageMask (individual mask) if a valid one exists for the current image
+    if (imageMask.Width() == imageGray.Width() && imageMask.Height() == imageGray.Height())
+      mask = &imageMask;
+
+    // Compute features and descriptors and export them to files
+    std::unique_ptr<Regions> regions;
+    image_describer->Describe(imageGray, regions, mask);
+    image_describer->Save(regions.get(), sFeat, sDesc);
+  }
+  return 0;
+}
+
 PYBIND11_PLUGIN(openmvg) {
     py::module m("openmvg", "openMVG Bindings");
 
     m.def("run", &run, "Compute image features");
     m.def("process_image", &process_image, "Generate features and sift descriptors for a single image");
+    m.def("generate_keypoints", &generate_keypoints, "Generate keypoints in the given images and save to a file");
 
     py::class_<View>(m, "View")
         .def(py::init<const std::string &, IndexT, IndexT, IndexT, IndexT, IndexT>());
